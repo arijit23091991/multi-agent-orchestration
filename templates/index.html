@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Agent Research Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <header class="topbar">
+        <a class="brand" href="/">
+            <span class="brand-icon">AI</span>
+            <span>Research<span class="brand-light">Lab</span></span>
+        </a>
+        <span class="top-label">MULTI-AGENT SYSTEM</span>
+    </header>
+
+    <main class="container">
+        <section class="hero">
+            <div class="eyebrow">INTELLIGENT RESEARCH WORKSPACE</div>
+            <h1>Turn questions into<br><span>research reports.</span></h1>
+            <p>
+                Search the web, extract useful information, generate a report,
+                and evaluate it with an AI critic.
+            </p>
+        </section>
+
+        <section class="search-card">
+            <label for="topic">What would you like to research?</label>
+
+            <form id="research-form">
+                <textarea id="topic" name="topic" rows="2" maxlength="500" minlength="3"
+                    placeholder="e.g. The impact of AI on the job market in 2026" required></textarea>
+
+                <div class="form-bottom">
+                    <span class="hint">Use a specific topic for better results.</span>
+                    <button id="submit-btn" type="submit">
+                        <span id="button-text">Start research</span>
+                        <span aria-hidden="true"> →</span>
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <section id="progress-section" class="progress-section hidden" aria-live="polite">
+            <div class="progress-heading">
+                <div>
+                    <h2>Research in progress</h2>
+                    <p id="status-text">Preparing your research...</p>
+                </div>
+                <div class="spinner" aria-hidden="true"></div>
+            </div>
+
+            <div class="steps">
+                <div class="step" data-step="1">
+                    <span class="step-number">1</span>
+                    <div>
+                        <strong>Search agent</strong>
+                        <p>Finding relevant sources</p>
+                    </div>
+                    <span class="step-status">Waiting</span>
+                </div>
+
+                <div class="step" data-step="2">
+                    <span class="step-number">2</span>
+                    <div>
+                        <strong>Reader agent</strong>
+                        <p>Extracting source content</p>
+                    </div>
+                    <span class="step-status">Waiting</span>
+                </div>
+
+                <div class="step" data-step="3">
+                    <span class="step-number">3</span>
+                    <div>
+                        <strong>Writer agent</strong>
+                        <p>Writing the research report</p>
+                    </div>
+                    <span class="step-status">Waiting</span>
+                </div>
+
+                <div class="step" data-step="4">
+                    <span class="step-number">4</span>
+                    <div>
+                        <strong>Critic agent</strong>
+                        <p>Reviewing report quality</p>
+                    </div>
+                    <span class="step-status">Waiting</span>
+                </div>
+            </div>
+        </section>
+
+        <section id="error-box" class="error-box hidden" role="alert"></section>
+
+        <section id="results" class="results hidden">
+            <div class="results-heading">
+                <div>
+                    <div class="eyebrow">RESEARCH OUTPUT</div>
+                    <h2 id="result-topic"></h2>
+                </div>
+                <button id="download-btn" class="secondary-btn" type="button">
+                    Download report
+                </button>
+            </div>
+
+            <article class="report-card">
+                <div class="card-heading">
+                    <div>
+                        <span class="card-label">FINAL REPORT</span>
+                        <h3>Research findings</h3>
+                    </div>
+                    <span class="pill">Writer agent</span>
+                </div>
+                <pre id="report" class="content report-content"></pre>
+            </article>
+
+            <article class="feedback-card">
+                <div class="card-heading">
+                    <div>
+                        <span class="card-label">QUALITY REVIEW</span>
+                        <h3>Critic feedback</h3>
+                    </div>
+                    <span class="pill">Critic agent</span>
+                </div>
+                <pre id="feedback" class="content"></pre>
+            </article>
+
+            <details class="detail-card">
+                <summary>Search results</summary>
+                <pre id="search-results" class="content"></pre>
+            </details>
+
+            <details class="detail-card">
+                <summary>Scraped source content</summary>
+                <pre id="scraped-content" class="content"></pre>
+            </details>
+        </section>
+
+        <footer>
+            Built with FastAPI, LangChain, Gemini and Tavily
+        </footer>
+    </main>
+
+    <script>
+        const form = document.getElementById("research-form");
+        const topicInput = document.getElementById("topic");
+        const submitBtn = document.getElementById("submit-btn");
+        const buttonText = document.getElementById("button-text");
+        const progressSection = document.getElementById("progress-section");
+        const statusText = document.getElementById("status-text");
+        const results = document.getElementById("results");
+        const errorBox = document.getElementById("error-box");
+
+        let latestReport = "";
+
+        function setStep(number, status) {
+            const step = document.querySelector(
+                `.step[data-step="${number}"]`
+            );
+
+            if (!step) return;
+
+            step.classList.remove("active", "completed", "failed");
+
+            if (status === "active") step.classList.add("active");
+            if (status === "completed") step.classList.add("completed");
+            if (status === "failed") step.classList.add("failed");
+
+            const labels = {
+                waiting: "Waiting",
+                active: "Working",
+                completed: "Completed",
+                failed: "Failed"
+            };
+
+            step.querySelector(".step-status").textContent = labels[status];
+        }
+
+        function resetSteps() {
+            for (let i = 1; i <= 4; i++) {
+                setStep(i, "waiting");
+            }
+        }
+
+        function showError(message) {
+            errorBox.textContent = message;
+            errorBox.classList.remove("hidden");
+        }
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+
+            const topic = topicInput.value.trim();
+
+            if (topic.length < 3) {
+                showError("Please enter a topic with at least 3 characters.");
+                return;
+            }
+
+            submitBtn.disabled = true;
+            buttonText.textContent = "Researching...";
+            progressSection.classList.remove("hidden");
+            results.classList.add("hidden");
+            errorBox.classList.add("hidden");
+            statusText.textContent = "Running the research pipeline...";
+            resetSteps();
+
+            let failed = false;
+
+            try {
+                // The pipeline is synchronous. These labels indicate the
+                // overall running state; they are not live server events.
+                setStep(1, "active");
+
+                const response = await fetch("/api/research", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ topic })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.detail || "Unable to complete the research."
+                    );
+                }
+
+                setStep(1, "completed");
+                setStep(2, "completed");
+                setStep(3, "completed");
+                setStep(4, "completed");
+
+                statusText.textContent = "Research completed successfully.";
+
+                document.getElementById("result-topic").textContent =
+                    data.topic;
+
+                document.getElementById("report").textContent =
+                    data.report || "No report was generated.";
+
+                document.getElementById("feedback").textContent =
+                    data.feedback || "No critic feedback was generated.";
+
+                document.getElementById("search-results").textContent =
+                    data.search_results || "No search results returned.";
+
+                document.getElementById("scraped-content").textContent =
+                    data.scraped_content || "No scraped content returned.";
+
+                latestReport =
+                    `Topic: ${data.topic}\n\n` +
+                    `RESEARCH REPORT\n\n${data.report}\n\n` +
+                    `CRITIC FEEDBACK\n\n${data.feedback}`;
+
+                results.classList.remove("hidden");
+                results.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start"
+                });
+
+            } catch (error) {
+                failed = true;
+                setStep(1, "failed");
+                statusText.textContent = "Research could not be completed.";
+                showError(error.message || "An unexpected error occurred.");
+            } finally {
+                progressSection.classList.remove("hidden");
+                submitBtn.disabled = false;
+                buttonText.textContent = "Start research";
+            }
+        });
+
+        document.getElementById("download-btn").addEventListener("click", () => {
+            if (!latestReport) return;
+
+            const blob = new Blob([latestReport], {
+                type: "text/plain;charset=utf-8"
+            });
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+
+            link.href = url;
+            link.download = "research-report.txt";
+            link.click();
+
+            URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+
+</html>
