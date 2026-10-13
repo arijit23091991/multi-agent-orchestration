@@ -5,8 +5,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+import uvicorn
 
 from pipeline import run_research_pipeline
+
+from database import SessionLocal
+from models import ResearchRun
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -60,8 +64,24 @@ def research(request: ResearchRequest):
 
     try:
         result = run_research_pipeline(topic, verbose=False)
-
+        
+        with SessionLocal() as db:
+            saved_run = ResearchRun(
+                topic=topic,
+                search_results=result.get("search_results", ""),
+                scraped_content=result.get("scrapped_content", ""),
+                report=result.get("report", ""),
+                feedback=result.get("feedback", ""),
+            )
+    
+            db.add(saved_run)
+            db.commit()
+            db.refresh(saved_run)
+    
+            research_id = saved_run.id
+    
         return {
+            "id": research_id,
             "topic": topic,
             "search_results": result.get("search_results", ""),
             "scraped_content": result.get("scrapped_content", ""),
@@ -78,3 +98,7 @@ def research(request: ResearchRequest):
             status_code=500,
             detail="Research failed. Check the server logs and API configuration.",
         ) from exc
+
+if __name__ == "__main__":
+    # Target the application string to safely support reload features
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
